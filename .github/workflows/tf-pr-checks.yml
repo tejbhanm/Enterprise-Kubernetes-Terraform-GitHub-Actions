@@ -1,0 +1,84 @@
+name: "Terraform Security Scan & PR Plan"
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "environments/**"
+      - "modules/**"
+      - "policy/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  static_analysis:
+    name: "Level 500 Security Audit"
+    runs-on: [self-hosted, wsl]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: "v0.50.0"
+
+      - name: Lint Modules
+        run: |
+          tflint --init
+          tflint --recursive
+
+      - name: IaC Vulnerability Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "config"
+          hide-progress: true
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+
+  plan_and_policy:
+    name: "Terraform Plan & Policy Gate"
+    needs: [static_analysis]
+    runs-on: [self-hosted, wsl]
+    defaults:
+      run:
+        working-directory: environments/dev-kind
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.3"
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: |
+          terraform plan -no-color -out=tfplan.binary
+          terraform show -no-color tfplan.binary > tfplan.txt
+          terraform show -json tfplan.binary > tfplan.json
+
+      - name: Conftest Policy Scan
+        run: conftest test tfplan.json -p ../../policy/
+
+      - name: Attach Plan to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('environments/dev-kind/tfplan.txt', 'utf8');
+            const output = `#### Dev Kind Terraform Plan Status: ✅\n<details><summary>Show Plan Output</summary>\n\n\`\`\`hcl\n${plan.length > 60000 ? plan.substring(0, 60000) + '... (truncated)' : plan}\n\`\`\`\n</details>`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });

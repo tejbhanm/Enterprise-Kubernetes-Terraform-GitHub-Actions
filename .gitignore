@@ -1,0 +1,25 @@
+# GitHub Actions Self-Hosted Runner
+actions-runner/
+_work/
+
+# Terraform artifacts & state
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+tfplan.binary
+tfplan.json
+tfplan.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db
